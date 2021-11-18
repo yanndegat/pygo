@@ -1,5 +1,6 @@
-# Medium multiply
-A small demo library for a Medium publication about publishing libraries.
+# PyGo
+A small library exposising a helper decorator to ease the call of a go shared library
+from python.
 
 ### Installation
 ```
@@ -14,4 +15,5 @@ import pygo
 
 @pygo.gofunc(lib="mygolib.so", sig="string,string,void")
 def myGoFunc():
+    return
 ```

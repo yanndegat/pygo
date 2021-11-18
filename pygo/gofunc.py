@@ -1,5 +1,6 @@
 import ctypes
 import inspect
+import re
 from os.path import exists
 
 
@@ -48,7 +49,7 @@ class gofunc(object):
             raise e
 
         if sig is None:
-            self.sig = [ctypes.c_void_p]
+            self.sig = None
         else:
             self.sig = [_map_ctype(t) for t in sig.split(",")]
         return
@@ -59,8 +60,17 @@ class gofunc(object):
         except AttributeError:
             raise AttributeError(f"func {f.__name__} not found in {self.libPath}")
 
-        self.func.argtypes = self.sig[:-1]
-        self.func.restype = self.sig[-1]
+        if self.sig is None:
+            argspec = inspect.getfullargspec(f)
+            self.func.argtypes = [_map_ctype(t) for t in argspec[0]]
+            if argspec[1] is None:
+                self.func.restype = ctypes.c_void_p
+            else:
+                self.func.restype = _map_ctype(argspec[1])
+
+        else:
+            self.func.argtypes = self.sig[:-1]
+            self.func.restype = self.sig[-1]
 
         def wrapped_f(*args):
             return self.func(*args)
@@ -72,6 +82,10 @@ _ctypes = inspect.getmembers(ctypes, lambda a: not(inspect.isroutine(a)))
 
 
 def _map_ctype(t):
+
+    # remove ending indexes such as _1, _2 in arg types
+    t = re.sub('_[0-9]+', '', t)
+
     if t == "bool":
         return ctypes.c_bool
     elif t == "byte":

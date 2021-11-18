@@ -21,15 +21,24 @@ class GoFuncTestCase(unittest.TestCase):
         with self.assertRaises(Exception):
             result = _map_ctype("error")
 
-    def test_func(self):
+    def test_func_sig(self):
         """Test call go func"""
 
         @gofunc(lib="tests/mygolib.so", sig="c_char_p,c_char_p")
-        def test1(hello):
-            return
+        def test1(): pass
 
         result = test1("world".encode('utf-8'))
         self.assertEqual(result.decode('utf-8'), "hello world")
+
+    def test_func_args(self):
+        """Test call go func"""
+
+        @gofunc(lib="tests/mygolib.so")
+        def test1(c_char_p_1, *c_char_p): pass
+
+        result = test1("world".encode('utf-8'))
+        self.assertEqual(result.decode('utf-8'), "hello world")
+
 
 
 if __name__ == '__main__':

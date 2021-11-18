@@ -42,9 +42,14 @@ edit your main.py
 import pygo
 
 @pygo.gofunc(lib="mygolib.so", sig="string,string")
-def myGoFunc():
-    return
-    
+def myGoFunc(): pass
+
+# OR 
+
+@gofunc(lib="tests/mygolib.so")
+def test1(c_char_p_1, *c_char_p): pass
+
+
 if __name__ == '__main__':
     res = myGoFunc("world".encode('utf-8'))
     print( res.decode('utf-8'))

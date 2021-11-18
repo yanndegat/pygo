@@ -34,58 +34,85 @@ class gofunc(object):
     :rtype: int
     """
 
-    def __init__(self, lib=None, sig=None):
+    def __init__(self, lib=None, sig=None, fname=None):
         if lib is None or not isinstance(lib, str) or not exists(lib):
             raise Exception("lib is mandatory and has to be a string"
                             " representing the file path of a go lib.")
         if sig is not None and not isinstance(sig, str):
             raise Exception("sig has to be a string representing the type"
                             " signature of a go lib func.")
+        if fname is not None and not isinstance(fname, str):
+            raise Exception("fname has to be a string representing a valid"
+                            " function name of a go lib func.")
 
         self.libPath = lib
-        try:
-            self.lib = ctypes.cdll.LoadLibrary(lib)
-        except Exception as e:
-            raise e
+        self.fname = fname
+        self.sig = sig
 
-        if sig is None:
-            self.sig = None
-        else:
-            self.sig = [_map_ctype(t) for t in sig.split(",")]
         return
 
     def __call__(self, f):
         try:
-            self.func = getattr(self.lib, f.__name__)
-        except AttributeError:
-            raise AttributeError(f"func {f.__name__} not found in {self.libPath}")
+            self.lib = ctypes.cdll.LoadLibrary(self.libPath)
+        except Exception as e:
+            raise e
 
+        # method name is overriden by annotation "fname" arg
+        if self.fname is None:
+            self.fname = f.__name__
+
+        try:
+            self.func = getattr(self.lib, self.fname)
+        except AttributeError:
+            raise AttributeError(
+                f"func {self.f.name} not found in {self.libPath}")
+
+        # method signature is overriden by annotation "sig" arg
         if self.sig is None:
             argspec = inspect.getfullargspec(f)
-            self.func.argtypes = [_map_ctype(t) for t in argspec[0]]
+            self.sig = [_trim_sigtype(t) for t in argspec[0]]
             if argspec[1] is None:
-                self.func.restype = ctypes.c_void_p
+                self.sig.append("c_void_p")
             else:
-                self.func.restype = _map_ctype(argspec[1])
-
+                self.sig.append(_trim_sigtype(argspec[1]))
         else:
-            self.func.argtypes = self.sig[:-1]
-            self.func.restype = self.sig[-1]
+            self.sig = [_trim_sigtype(t) for t in self.sig.split(",")]
+
+        self.func.argtypes = [_map_ctype(t) for t in self.sig[:-1]]
+        self.func.restype = _map_ctype(self.sig[-1])
 
         def wrapped_f(*args):
-            return self.func(*args)
+            enc_args = [_enc_type_value(arg, self.sig[i])
+                        for i, arg in enumerate(args)]
+
+            return _dec_type_value(self.func(*enc_args), self.sig[-1])
 
         return wrapped_f
+
+
+def _enc_type_value(value, type, enc="utf-8"):
+    if type == "string":
+        return value.encode(enc)
+
+    return value
+
+
+def _dec_type_value(value, type, enc="utf-8"):
+    if type == "string":
+        return value.decode(enc)
+
+    return value
+
+
+def _trim_sigtype(t):
+    # remove ending indexes such as _1, _2 in arg types
+    return re.sub('_[0-9]+', '', t)
 
 
 _ctypes = inspect.getmembers(ctypes, lambda a: not(inspect.isroutine(a)))
 
 
 def _map_ctype(t):
-
-    # remove ending indexes such as _1, _2 in arg types
-    t = re.sub('_[0-9]+', '', t)
-
     if t == "bool":
         return ctypes.c_bool
     elif t == "byte":

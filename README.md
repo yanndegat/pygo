@@ -41,17 +41,24 @@ edit your main.py
 ```Python
 import pygo
 
-@pygo.gofunc(lib="mygolib.so", sig="string,string")
-def myGoFunc(): pass
+@pygo.gofunc(lib="mygolib.so")
+def myGoFunc(string_1, *string): pass
 
-# OR 
+@pygo.gofunc(lib="mygolib.so", sig="string,string", fname="myGoFunc")
+def test1(): pass
 
-@gofunc(lib="tests/mygolib.so")
-def test1(c_char_p_1, *c_char_p): pass
+@gofunc(lib="tests/mygolib.so", fname="myGoFunc")
+def test2(c_char_p_1, *c_char_p): pass
 
 
 if __name__ == '__main__':
-    res = myGoFunc("world".encode('utf-8'))
+    res = myGoFunc("world")
+    print( res))
+    
+    res = test1("world")
+    print( res))
+
+    res = test2("world".encode('utf-8'))
     print( res.decode('utf-8'))
 ```
 
@@ -59,6 +66,8 @@ if __name__ == '__main__':
 
 ``` sh
 $ python3 main.py
+hello world
+hello world
 hello world
 ```
 

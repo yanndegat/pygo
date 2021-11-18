@@ -39,6 +39,27 @@ class GoFuncTestCase(unittest.TestCase):
         result = test1("world".encode('utf-8'))
         self.assertEqual(result.decode('utf-8'), "hello world")
 
+    def test_func_enc(self):
+        """Test call go func"""
+
+        @gofunc(lib="tests/mygolib.so")
+        def test1(string_1, *string): pass
+
+        result = test1("world")
+        self.assertEqual(result, "hello world")
+
+    def test_func_rename(self):
+        """Test call go func"""
+
+        @gofunc(lib="tests/mygolib.so")
+        def test1(string_1, *string): pass
+
+        @gofunc(lib="tests/mygolib.so", fname="test1")
+        def test2(string_1, *string): pass
+
+        result = test1("world")
+        self.assertEqual(result, "hello world")
+
 
 
 if __name__ == '__main__':

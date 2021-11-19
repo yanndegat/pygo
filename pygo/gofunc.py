@@ -1,37 +1,79 @@
 import ctypes
 import inspect
 import re
+
+from threading import RLock
 from os.path import exists
+
+_LIBS = {}
+_LIBS_LOCK = RLock()
 
 
 class gofunc(object):
     """
     gofunc annotation decorates any func to call a go
-    lib func with the same name
+    lib func with the same name.
 
-    Ex:
+    Example:
+
     ```
-    // mylib.go
-    func myfunc(a, b string) {
-       ....
+    //mylib.go
+    import (
+        "C"
+        "fmt"
+    )
+
+    //export myGoFunc
+    func myGoFunc(carg *C.char) *C.char {
+        goarg := C.GoString(carg)
+        return C.CString(fmt.Sprintf("hello %s", goarg))
     }
+
+    func main() {}
     ```
     will give
 
     ```
     //mylib.py
     import pygo
-    @pygo.gofunc(lib="mylib.so", sig=string,string,void)
+    @pygo.gofunc(lib="mygolib.so")
+    def myGoFunc(string_1, *string): pass
     ```
 
-    :param lib: The name of the golang lib.
+    The signature of the python method is used to infer golang func argument
+    types and return type. You can use _IX to index the arg names if types have
+    to be repeated.
+
+    Examples:
+
+
+    go sig -> python sig
+
+    - (carg *C.char) {} -> (string): pass
+    - (carg *C.char) {} -> (string, *void): pass
+    - (carg *C.char) {} -> (string, *void): pass
+    - (carg *C.char) *C.char {} -> (c_char_p_1, *c_char_p): pass
+    - (carg *C.char) *C.char {} -> (c_char_p_1, *c_char_p): pass
+    - (carg1, carg2 *C.char) *C.char {} -> (c_char_p_1, *c_char_p): pass
+    - (carg1, carg2 *C.char) *C.char {} -> (string_1, string_2, *string): pass
+
+    The annotation takes parameters
+
+    :param lib: The path of the golang lib to load.
     :type lib: string
 
     :param sig: The type signature of the golang lib func.
+                Will override the signature of the python function.
+                The last type will be used as the return type.
+                If the go func has arguments and the return type is
+                void, you have to specify "void" in the sig type list.
+
     :type lib: string
 
-    :return: The result of the multiplication.
-    :rtype: int
+    :param fname: The go func name to use.
+                  Will override the name of the python function.
+
+    :type fname: string
     """
 
     def __init__(self, lib=None, sig=None, fname=None):
@@ -53,7 +95,7 @@ class gofunc(object):
 
     def __call__(self, f):
         try:
-            self.lib = ctypes.cdll.LoadLibrary(self.libPath)
+            self.lib = _load_lib(self.libPath)
         except Exception as e:
             raise e
 
@@ -106,7 +148,11 @@ def _dec_type_value(value, type, enc="utf-8"):
 
 def _trim_sigtype(t):
     # remove ending indexes such as _1, _2 in arg types
-    return re.sub('_[0-9]+', '', t)
+    # removes stars from types
+    if t is not None and isinstance(t, str):
+        return re.sub('(\*|_[0-9]+)', '', t.strip())
+    else:
+        raise Exception(f"sigtype must be a valid string: {t}")
 
 
 _ctypes = inspect.getmembers(ctypes, lambda a: not(inspect.isroutine(a)))
@@ -140,3 +186,11 @@ def _map_ctype(t):
                 return found[0]
 
         raise Exception(f"unkwon type {t}.")
+
+
+def _load_lib(lib_path):
+    with _LIBS_LOCK:
+        if lib_path not in _LIBS:
+            _LIBS[lib_path] = ctypes.cdll.LoadLibrary(lib_path)
+
+        return _LIBS[lib_path]

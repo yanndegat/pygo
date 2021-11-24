@@ -1,6 +1,9 @@
 ##
 # Pygo
 #
+TEST?=$$(go list ./... |grep -v 'vendor')
+GOFMT_FILES?=$$(find . -name '*.go' |grep -v vendor)
+PYGO_GEN_FILES?=$$(find tests -type d -name 'pygo' |grep -v vendor)
 
 all: help
 
@@ -20,6 +23,28 @@ dist-check: dist ## check if dist is correct
 
 tests/mygolib.go:
 tests/mygolib.so: tests/mygolib.go ## build go shared library for tests
-	@go build -o $@ -buildmode=c-shared tests/mygolib.go
+	 @go generate tests/mygolib.go
+#@go build -o $@ -buildmode=c-shared tests/mygolib.go
+
+bin:
+	@mkdir -p $@
+
+.PHONY: pygo
+pygo: go-fmtcheck bin
+	@go build -o bin/$@ main.go
+
+pygo-clean:
+	@rm -Rf $(PYGO_GEN_FILES)
+
+go-test: go-fmtcheck
+	go test -i $(TEST) || exit 1
+	echo $(TEST) | \
+		xargs -t -n4 go test $(TESTARGS) -timeout=30s -parallel=4
+
+go-fmt:
+	gofmt -w $(GOFMT_FILES)
+
+go-fmtcheck:
+	@sh -c "'$(CURDIR)/scripts/gofmtcheck.sh'"
 
 # end

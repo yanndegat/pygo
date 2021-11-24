@@ -37,5 +37,5 @@ setup(
     ],
     packages=["pygo"],
     include_package_data=True,
-    install_requires=["ctypes"]
+    install_requires=[]
 )

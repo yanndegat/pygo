@@ -1,9 +1,9 @@
 import ctypes
 import inspect
 import re
+import os
 
 from threading import RLock
-from os.path import exists
 
 _LIBS = {}
 _LIBS_LOCK = RLock()
@@ -59,8 +59,15 @@ class gofunc(object):
 
     The annotation takes parameters
 
-    :param lib: The path of the golang lib to load.
+    :param lib: The name of the golang lib to load.
+                It must represent a valid .so library
+                present in `libPath`.
     :type lib: string
+
+    :param libPath: The path from where the golang lib will be
+                    to loaded. By default, if will load the lib
+                    in the same path as the calling function.
+    :type libPath: string
 
     :param sig: The type signature of the golang lib func.
                 Will override the signature of the python function.
@@ -68,7 +75,7 @@ class gofunc(object):
                 If the go func has arguments and the return type is
                 void, you have to specify "void" in the sig type list.
 
-    :type lib: string
+    :type sig: string
 
     :param fname: The go func name to use.
                   Will override the name of the python function.
@@ -76,10 +83,12 @@ class gofunc(object):
     :type fname: string
     """
 
-    def __init__(self, lib=None, sig=None, fname=None):
-        if lib is None or not isinstance(lib, str) or not exists(lib):
+    def __init__(self, lib=None, libPath=None, sig=None, fname=None):
+        if lib is None or not isinstance(lib, str):
             raise Exception("lib is mandatory and has to be a string"
                             " representing the file path of a go lib.")
+        if libPath is not None and not os.path.exists(libPath):
+            raise Exception("libPath must represent an existing file path.")
         if sig is not None and not isinstance(sig, str):
             raise Exception("sig has to be a string representing the type"
                             " signature of a go lib func.")
@@ -87,7 +96,8 @@ class gofunc(object):
             raise Exception("fname has to be a string representing a valid"
                             " function name of a go lib func.")
 
-        self.libPath = lib
+        self.lib = lib
+        self.libPath = libPath
         self.fname = fname
         self.sig = sig
 
@@ -95,7 +105,10 @@ class gofunc(object):
 
     def __call__(self, f):
         try:
-            self.lib = _load_lib(self.libPath)
+            libPath = self.libPath
+            if libPath is None:
+                libPath = os.path.dirname(f.__code__.co_filename)
+            self.lib = _load_lib(libPath, self.lib)
         except Exception as e:
             raise e
 
@@ -107,7 +120,7 @@ class gofunc(object):
             self.func = getattr(self.lib, self.fname)
         except AttributeError:
             raise AttributeError(
-                f"func {self.f.name} not found in {self.libPath}")
+                f"func {self.fname} not found in {self.lib}")
 
         # method signature is overriden by annotation "sig" arg
         if self.sig is None:
@@ -188,9 +201,9 @@ def _map_ctype(t):
         raise Exception(f"unkwon type {t}.")
 
 
-def _load_lib(lib_path):
+def _load_lib(libPath, lib):
     with _LIBS_LOCK:
-        if lib_path not in _LIBS:
-            _LIBS[lib_path] = ctypes.cdll.LoadLibrary(lib_path)
+        if lib not in _LIBS:
+            _LIBS[lib] = ctypes.cdll.LoadLibrary(os.path.join(".", libPath, lib))
 
-        return _LIBS[lib_path]
+        return _LIBS[lib]

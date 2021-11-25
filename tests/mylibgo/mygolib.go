@@ -29,14 +29,14 @@ func Test1(arg string) {
 
 //@pygo.export
 func Test2(arg string) int {
-	return 0
+	return 42
 }
 
 /* this func is exported
  * @pygo.export
  */
 func Test3(arg1, arg2 string, arg3 int) string {
-	return fmt.Sprintf("hello %s", arg1)
+	return fmt.Sprintf("%s %s %d", arg1, arg2, arg3)
 }
 
 /* this func is exported
@@ -49,20 +49,27 @@ func Test4(arg1, arg2 string, arg3 []int) error {
 /* this func is exported
  * @pygo.export
  */
-func Test5(arg1, arg2 string, arg3 int) map[string]int {
-	return nil
+func Test5(arg1, arg2 string, arg3 int) []int {
+	return []int{arg3}
+}
+
+/* this func is exported
+ * @ pygo.export
+ */
+func Test6(arg1, arg2 string) []string {
+	return []string{arg1, arg2}
 }
 
 /* this func is exported
  * @pygo.export
  */
-func Test6(arg MyStruct) MyStruct {
+func Test7(arg MyStruct) MyStruct {
 	return MyStruct{}
 }
 
 /* this func is exported
  * @pygo.export
  */
-func Test7(arg MyStruct) *MyComplexStruct {
+func Test8(arg MyStruct) *MyComplexStruct {
 	return nil
 }

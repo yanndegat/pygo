@@ -1,12 +1,21 @@
-import ctypes
 import inspect
 import re
 import os
 
+import ctypes
 from threading import RLock
 
 _LIBS = {}
 _LIBS_LOCK = RLock()
+
+
+class GoSlice(ctypes.Structure):
+    _fields_ = [("data", ctypes.POINTER(ctypes.c_void_p)),
+                ("len", ctypes.c_longlong), ("cap", ctypes.c_longlong)]
+
+
+class GoString(ctypes.Structure):
+    _fields_ = [("p", ctypes.c_char_p), ("n", ctypes.c_longlong)]
 
 
 class gofunc(object):
@@ -83,7 +92,12 @@ class gofunc(object):
     :type fname: string
     """
 
-    def __init__(self, lib=None, libPath=None, sig=None, fname=None):
+    def __init__(self,
+                 lib=None,
+                 libPath=None,
+                 sig=None,
+                 fname=None,
+                 freeStringFunc="freeCString"):
         if lib is None or not isinstance(lib, str):
             raise Exception("lib is mandatory and has to be a string"
                             " representing the file path of a go lib.")
@@ -92,6 +106,9 @@ class gofunc(object):
         if sig is not None and not isinstance(sig, str):
             raise Exception("sig has to be a string representing the type"
                             " signature of a go lib func.")
+        if freeStringFunc is None or freeStringFunc == "":
+            raise Exception("freeStringFunc is mandotory and must represent"
+                            " the name of a `func (s *C.char)` in your go lib.")
         if fname is not None and not isinstance(fname, str):
             raise Exception("fname has to be a string representing a valid"
                             " function name of a go lib func.")
@@ -100,6 +117,7 @@ class gofunc(object):
         self.libPath = libPath
         self.fname = fname
         self.sig = sig
+        self.freeStringFunc = freeStringFunc
 
         return
 
@@ -115,6 +133,14 @@ class gofunc(object):
         # method name is overriden by annotation "fname" arg
         if self.fname is None:
             self.fname = f.__name__
+
+        try:
+            self.freeStr = getattr(self.lib, self.freeStringFunc)
+            self.freeStr.argtypes = [ctypes.c_char_p]
+            self.freeStr.restype = ctypes.c_void_p
+        except AttributeError:
+            raise AttributeError(
+                f"func {self.freeStringFunc} not found in {self.lib}")
 
         try:
             self.func = getattr(self.lib, self.fname)
@@ -134,29 +160,34 @@ class gofunc(object):
             self.sig = [_trim_sigtype(t) for t in self.sig.split(",")]
 
         self.func.argtypes = [_map_ctype(t) for t in self.sig[:-1]]
-        self.func.restype = _map_ctype(self.sig[-1])
+        self.func.restype = _map_ret_ctype(self.sig[-1])
 
         def wrapped_f(*args):
-            enc_args = [_enc_type_value(arg, self.sig[i])
+            enc_args = [self._enc_type_value(arg, self.sig[i])
                         for i, arg in enumerate(args)]
 
-            return _dec_type_value(self.func(*enc_args), self.sig[-1])
+            return self._dec_type_value(self.func(*enc_args), self.sig[-1])
 
         return wrapped_f
 
+    def _enc_type_value(self, value, valueType, enc="utf-8"):
+        if valueType == "string":
+            return GoString(value.encode(enc), len(value))
 
-def _enc_type_value(value, type, enc="utf-8"):
-    if type == "string":
-        return value.encode(enc)
+        return value
 
-    return value
+    def _dec_type_value(self, value, valueType, enc="utf-8"):
+        res = value
+        if valueType == "string" \
+           or valueType == "c_char_p" \
+           or valueType == "error":
+            res = ctypes.cast(value, ctypes.c_char_p).value
+            self.freeStr(value)
 
+        if valueType == "string" or valueType == "error":
+            res = res.decode(enc)
 
-def _dec_type_value(value, type, enc="utf-8"):
-    if type == "string":
-        return value.decode(enc)
-
-    return value
+        return res
 
 
 def _trim_sigtype(t):
@@ -170,6 +201,11 @@ def _trim_sigtype(t):
 
 _ctypes = inspect.getmembers(ctypes, lambda a: not(inspect.isroutine(a)))
 
+
+def _map_ret_ctype(t):
+    if t == "string" or t == "error" or t == "c_char_p":
+        return ctypes.POINTER(ctypes.c_char)
+    return _map_ctype(t)
 
 def _map_ctype(t):
     if t == "bool":
@@ -189,7 +225,10 @@ def _map_ctype(t):
     elif t == "double":
         return ctypes.c_double
     elif t == "string":
-        return ctypes.c_char_p
+        return GoString
+    elif t == "error":
+        return GoString
+    # ctypes.c_char_p
     elif t == "void":
         return ctypes.c_void_p
     else:

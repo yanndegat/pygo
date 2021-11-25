@@ -29,12 +29,12 @@ func (f *Func) String() string {
 func (f *Func) PySig() string {
 	sig := []string{}
 	for i, arg := range f.Args {
-		sig = append(sig, fmt.Sprintf("%s_%d", arg.Type, i))
+		sig = append(sig, fmt.Sprintf("%s_%d", arg.Type.T(), i))
 	}
 	if f.Result != TypeVoid {
 		// star means kwargs, which is a special case
 		// interpreted by pygo to infer return type
-		sig = append(sig, fmt.Sprintf("*%s", f.Result))
+		sig = append(sig, fmt.Sprintf("*%s", f.Result.T()))
 	}
 
 	return strings.Join(sig, ", ")
@@ -43,7 +43,7 @@ func (f *Func) PySig() string {
 func (f *Func) GoSigArgs() string {
 	sig := make([]string, len(f.Args))
 	for i, arg := range f.Args {
-		sig[i] = fmt.Sprintf("%s %s", arg.Name, arg.Type.ToCType())
+		sig[i] = fmt.Sprintf("%s %s", arg.Name, arg.Type)
 	}
 	return strings.Join(sig, ", ")
 }
@@ -51,10 +51,14 @@ func (f *Func) GoSigArgs() string {
 func (f *Func) GoFuncCall() string {
 	args := make([]string, len(f.Args))
 	for i, arg := range f.Args {
-		args[i] = string(arg.ToGoType())
+		args[i] = string(arg.ToGoValue())
 	}
 
 	call := fmt.Sprintf("%s.%s(%s)", f.Lib, f.Name, strings.Join(args, ", "))
+
+	if f.Result == TypeError {
+		call = fmt.Sprintf("handleError(%s)", call)
+	}
 	if f.Result == TypeString {
 		call = fmt.Sprintf("C.CString(%s)", call)
 	}
@@ -71,7 +75,7 @@ func (f *Func) GoSigRet() string {
 		return ""
 	}
 
-	return fmt.Sprintf("%s", f.Result.ToCType())
+	return string(f.Result.ToCType())
 }
 
 type Arg struct {
@@ -83,10 +87,13 @@ func (a Arg) String() string {
 	return fmt.Sprintf("%s:%s", a.Name, a.Type)
 }
 
-func (a Arg) ToGoType() string {
-	if a.Type == TypeString {
+func (a Arg) ToGoValue() string {
+	if a.Type == TypeCChar {
 		return fmt.Sprintf("C.GoString(%s)", a.Name)
 	}
 
+	if a.Type == TypeError {
+		return fmt.Sprintf("StringToError(%s)", a.Name)
+	}
 	return a.Name
 }

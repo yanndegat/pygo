@@ -29,12 +29,12 @@ func (f *Func) String() string {
 func (f *Func) PySig() string {
 	sig := []string{}
 	for i, arg := range f.Args {
-		sig = append(sig, fmt.Sprintf("%s_%d", arg.Type.T(), i))
+		sig = append(sig, fmt.Sprintf("%s_%d", arg.Type.ToPyType(), i))
 	}
 	if f.Result != TypeVoid {
 		// star means kwargs, which is a special case
 		// interpreted by pygo to infer return type
-		sig = append(sig, fmt.Sprintf("*%s", f.Result.T()))
+		sig = append(sig, fmt.Sprintf("*%s", f.Result.ToPyType()))
 	}
 
 	return strings.Join(sig, ", ")
@@ -54,16 +54,28 @@ func (f *Func) GoFuncCall() string {
 		args[i] = string(arg.ToGoValue())
 	}
 
-	call := fmt.Sprintf("%s.%s(%s)", f.Lib, f.Name, strings.Join(args, ", "))
+	return fmt.Sprintf("%s.%s(%s)", f.Lib, f.Name, strings.Join(args, ", "))
+}
 
+func (f *Func) ReturnConvertedResult() string {
+	if f.IsVoid() {
+		return ""
+	}
 	if f.Result == TypeError {
-		call = fmt.Sprintf("handleError(%s)", call)
+		return fmt.Sprintf("return handleError(%s)", f.GoFuncCall())
 	}
 	if f.Result == TypeString {
-		call = fmt.Sprintf("C.CString(%s)", call)
+		return fmt.Sprintf("return C.CString(%s)", f.GoFuncCall())
 	}
-	return call
+	if f.Result.IsArray() {
+		convert, err := f.convertResToSlice()
+		if err != nil {
+			return fmt.Sprintf("This is an impl error and shouldn't happen: %v", err)
+		}
+		return convert
+	}
 
+	return fmt.Sprintf("return %s", f.GoFuncCall())
 }
 
 func (f *Func) IsVoid() bool {
@@ -88,7 +100,7 @@ func (a Arg) String() string {
 }
 
 func (a Arg) ToGoValue() string {
-	if a.Type == TypeCChar {
+	if a.Type == TypeCCharP {
 		return fmt.Sprintf("C.GoString(%s)", a.Name)
 	}
 

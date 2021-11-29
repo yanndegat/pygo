@@ -10,18 +10,25 @@ var (
 	arrayTypeRe   = regexp.MustCompile(`^(\[\])(.*)`)
 	pointerTypeRe = regexp.MustCompile(`^(\*)(.*)`)
 
-	TypeBool   Type = "bool"
-	TypeCChar  Type = "*C.char"
-	TypeError  Type = "error"
-	TypeInt    Type = "int"
-	TypeInt32  Type = "int32"
-	TypeInt64  Type = "int64"
-	TypeString Type = "string"
-	TypeVoid   Type = "void"
+	TypeBool    Type = "bool"
+	TypeByte    Type = "byte"
+	TypeCChar   Type = "C.char"
+	TypeCCharP  Type = "*C.char"
+	TypeCInt    Type = "C.int"
+	TypeCSlice  Type = "CSlice"
+	TypeCSliceP Type = "C.CSliceP"
+	TypeCVoidP  Type = "*C.void"
+	TypeError   Type = "error"
+	TypeInt     Type = "int"
+	TypeInt32   Type = "int32"
+	TypeInt64   Type = "int64"
+	TypeString  Type = "string"
+	TypeVoid    Type = "void"
+	TypePtr     Type = "uintptr"
 
 	ValidTypes = []Type{
 		TypeBool,
-		TypeBool,
+		TypeByte,
 		TypeError,
 		TypeInt,
 		TypeInt64,
@@ -32,6 +39,7 @@ var (
 
 	SupportedTypes = []Type{
 		TypeBool,
+		TypeByte,
 		TypeError,
 		TypeInt,
 		TypeInt32,
@@ -42,11 +50,12 @@ var (
 
 	GoTypeToCTypes = map[Type]Type{
 		TypeBool:   TypeBool,
-		TypeError:  TypeCChar,
+		TypeByte:   TypeByte,
+		TypeError:  TypeCCharP,
 		TypeInt:    TypeInt,
 		TypeInt32:  TypeInt32,
 		TypeInt64:  TypeInt64,
-		TypeString: TypeCChar,
+		TypeString: TypeCCharP,
 	}
 )
 
@@ -54,8 +63,7 @@ type Type string
 
 func (t Type) ToCType() Type {
 	if t.IsArray() {
-		arrayType := Type(arrayTypeRe.ReplaceAllString(string(t), "$2")).ToCType()
-		return Type(fmt.Sprintf("[]%s", arrayType))
+		return TypeCSliceP
 	}
 	if t.IsPointer() {
 		pointerType := Type(pointerTypeRe.ReplaceAllString(string(t), "$2")).ToCType()
@@ -63,6 +71,19 @@ func (t Type) ToCType() Type {
 	}
 
 	return GoTypeToCTypes[t.T()]
+}
+
+func (t Type) ToPyType() Type {
+	if t.IsArray() {
+		arrayType := Type(arrayTypeRe.ReplaceAllString(string(t), "$2")).ToPyType()
+		return Type(fmt.Sprintf("arr_%s", arrayType))
+	}
+	if t.IsPointer() {
+		pointerType := Type(pointerTypeRe.ReplaceAllString(string(t), "$2")).ToPyType()
+		return Type(fmt.Sprintf("ptr_%s", pointerType))
+	}
+
+	return t.T()
 }
 
 func (t Type) IsArray() bool {

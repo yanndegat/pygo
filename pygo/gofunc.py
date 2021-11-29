@@ -14,6 +14,11 @@ class GoSlice(ctypes.Structure):
                 ("len", ctypes.c_longlong), ("cap", ctypes.c_longlong)]
 
 
+class CSlice(ctypes.Structure):
+    _fields_ = [("data", ctypes.POINTER(ctypes.c_void_p)),
+                ("len", ctypes.c_longlong), ("cap", ctypes.c_longlong)]
+
+
 class GoString(ctypes.Structure):
     _fields_ = [("p", ctypes.c_char_p), ("n", ctypes.c_longlong)]
 
@@ -86,6 +91,15 @@ class gofunc(object):
 
     :type sig: string
 
+    :param freeMem: The name of a func which has to be present
+                in your lib, and whose signature has to be
+                `func (*C.void)`.
+                It'll be called which each pointer returned by your lib
+                so that mem can be freed once data has been passed to
+                python.
+
+    :type sig: string
+
     :param fname: The go func name to use.
                   Will override the name of the python function.
 
@@ -97,7 +111,7 @@ class gofunc(object):
                  libPath=None,
                  sig=None,
                  fname=None,
-                 freeStringFunc="freeCString"):
+                 freeMemFunc="freeMem"):
         if lib is None or not isinstance(lib, str):
             raise Exception("lib is mandatory and has to be a string"
                             " representing the file path of a go lib.")
@@ -106,9 +120,9 @@ class gofunc(object):
         if sig is not None and not isinstance(sig, str):
             raise Exception("sig has to be a string representing the type"
                             " signature of a go lib func.")
-        if freeStringFunc is None or freeStringFunc == "":
-            raise Exception("freeStringFunc is mandotory and must represent"
-                            " the name of a `func (s *C.char)` in your go lib.")
+        if freeMemFunc is None or freeMemFunc == "":
+            raise Exception("freeMemFunc is mandatory and must represent"
+                            " the name of a `func (s *C.void)` in your go lib.")
         if fname is not None and not isinstance(fname, str):
             raise Exception("fname has to be a string representing a valid"
                             " function name of a go lib func.")
@@ -117,7 +131,7 @@ class gofunc(object):
         self.libPath = libPath
         self.fname = fname
         self.sig = sig
-        self.freeStringFunc = freeStringFunc
+        self.freeMemFunc = freeMemFunc
 
         return
 
@@ -135,12 +149,12 @@ class gofunc(object):
             self.fname = f.__name__
 
         try:
-            self.freeStr = getattr(self.lib, self.freeStringFunc)
-            self.freeStr.argtypes = [ctypes.c_char_p]
-            self.freeStr.restype = ctypes.c_void_p
+            self.freeMem = getattr(self.lib, self.freeMemFunc)
+            self.freeMem.argtypes = [ctypes.c_void_p]
+            self.freeMem.restype = ctypes.c_void_p
         except AttributeError:
             raise AttributeError(
-                f"func {self.freeStringFunc} not found in {self.lib}")
+                f"func {self.freeMemFunc} not found in {self.lib}")
 
         try:
             self.func = getattr(self.lib, self.fname)
@@ -161,33 +175,92 @@ class gofunc(object):
 
         self.func.argtypes = [_map_ctype(t) for t in self.sig[:-1]]
         self.func.restype = _map_ret_ctype(self.sig[-1])
+        self.conv = [_map_conv(t) for t in self.sig[:-1]]
 
         def wrapped_f(*args):
-            enc_args = [self._enc_type_value(arg, self.sig[i])
-                        for i, arg in enumerate(args)]
-
-            return self._dec_type_value(self.func(*enc_args), self.sig[-1])
+            conv_args = [self.conv[i](arg) for i, arg in enumerate(args)]
+            return self._handle_ret_value(self.func(*conv_args), self.sig[-1])
 
         return wrapped_f
 
-    def _enc_type_value(self, value, valueType, enc="utf-8"):
-        if valueType == "string":
-            return GoString(value.encode(enc), len(value))
+    def _handle_ret_value(self, value, valueType, enc="utf-8"):
+        if value is None:
+            return None
 
-        return value
-
-    def _dec_type_value(self, value, valueType, enc="utf-8"):
-        res = value
         if valueType == "string" \
            or valueType == "c_char_p" \
            or valueType == "error":
             res = ctypes.cast(value, ctypes.c_char_p).value
-            self.freeStr(value)
+            self.freeMem(value)
+        elif valueType == "arr_int":
+            cslice = ctypes.cast(value, ctypes.POINTER(CSlice)).contents
+            arr = ctypes.cast(cslice.data, ctypes.POINTER(ctypes.c_int64*cslice.len))
+            res = [x for x in arr.contents]
+            self.freeMem(ctypes.cast(arr, ctypes.c_void_p))
+            self.freeMem(ctypes.cast(value, ctypes.c_void_p))
+        elif valueType == "arr_byte":
+            cslice = ctypes.cast(value, ctypes.POINTER(CSlice)).contents
+            arr = ctypes.cast(cslice.data, ctypes.POINTER(ctypes.c_byte*cslice.len))
+            res = [x for x in arr.contents]
+            self.freeMem(ctypes.cast(arr, ctypes.c_void_p))
+            self.freeMem(ctypes.cast(value, ctypes.c_void_p))
+        elif valueType == "arr_bool":
+            cslice = ctypes.cast(value, ctypes.POINTER(CSlice)).contents
+            arr = ctypes.cast(cslice.data, ctypes.POINTER(ctypes.c_bool*cslice.len))
+            res = [x for x in arr.contents]
+            self.freeMem(ctypes.cast(arr, ctypes.c_void_p))
+            self.freeMem(ctypes.cast(value, ctypes.c_void_p))
+        else:
+            res = value
 
-        if valueType == "string" or valueType == "error":
-            res = res.decode(enc)
+        if valueType == "string":
+            return res.decode(enc)
 
         return res
+
+
+def _no_conv(v):
+    return v
+
+
+def _string_conv(v):
+    return GoString(v.encode("utf-8"), len(v))
+
+
+def _arr_conv(t):
+    ct = _map_ctype(t)
+    def __conv(v):
+        s = len(v)
+        data = (ct * s)(*v)
+        gslice = GoSlice(ctypes.cast(data,ctypes.POINTER(ctypes.c_void_p)), s, s)
+        return gslice
+
+    return __conv
+
+
+def _map_conv(t):
+    if t == "string":
+        return _string_conv
+    if _is_array_type(t):
+        return _arr_conv(_array_type(t))
+
+    return _no_conv
+
+
+def _is_array_type(t):
+    # return true if t has prefix 'arr_'
+    if t is not None and isinstance(t, str):
+        return re.match('^arr_', t.strip())
+    else:
+        raise Exception(f"sigtype must be a valid string: {t}")
+
+
+def _array_type(t):
+    # remove prefix 'arr_' in strings
+    if t is not None and isinstance(t, str):
+        return re.sub('^arr_', '', t.strip())
+    else:
+        raise Exception(f"sigtype must be a valid string: {t}")
 
 
 def _trim_sigtype(t):
@@ -205,6 +278,8 @@ _ctypes = inspect.getmembers(ctypes, lambda a: not(inspect.isroutine(a)))
 def _map_ret_ctype(t):
     if t == "string" or t == "error" or t == "c_char_p":
         return ctypes.POINTER(ctypes.c_char)
+    if _is_array_type(t):
+        return ctypes.c_size_t
     return _map_ctype(t)
 
 def _map_ctype(t):
@@ -228,9 +303,10 @@ def _map_ctype(t):
         return GoString
     elif t == "error":
         return GoString
-    # ctypes.c_char_p
     elif t == "void":
         return ctypes.c_void_p
+    elif _is_array_type(t):
+        return GoSlice
     else:
         if isinstance(t, str) and t.startswith('c_'):
             found = [a[1] for a in _ctypes if a[0] == t]

@@ -50,26 +50,48 @@ func Test4(arg1, arg2 string, arg3 []int) error {
  * @pygo.export
  */
 func Test5(arg1, arg2 string, arg3 int) []int {
-	return []int{arg3}
+	res := make([]int, arg3)
+	for i, _ := range res {
+		res[i] = i * 2
+	}
+	return res
+}
+
+/* this func is exported
+ * @pygo.export
+ */
+func Test6(arg1 int, arg2 byte) []byte {
+	res := make([]byte, arg1)
+	for i, _ := range res {
+		res[i] = arg2
+	}
+	return res
+}
+
+/* this func is exported
+ * @pygo.export
+ */
+func Test7(arg1, arg2 []bool) []bool {
+	return append(arg1, arg2...)
 }
 
 /* this func is exported
  * @ pygo.export
  */
-func Test6(arg1, arg2 string) []string {
+func Test8(arg1, arg2 string) []string {
 	return []string{arg1, arg2}
 }
 
 /* this func is exported
  * @pygo.export
  */
-func Test7(arg MyStruct) MyStruct {
+func Test9(arg MyStruct) MyStruct {
 	return MyStruct{}
 }
 
 /* this func is exported
  * @pygo.export
  */
-func Test8(arg MyStruct) *MyComplexStruct {
+func Test10(arg MyStruct) *MyComplexStruct {
 	return nil
 }

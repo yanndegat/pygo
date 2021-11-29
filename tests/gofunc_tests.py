@@ -84,11 +84,30 @@ class GoFuncTestCase(unittest.TestCase):
 
         self.assertEqual(mygolib.Test3("hello", "world", 42), "hello world 42")
 
-    # def test_mylibgo_pass_int_array(self):
+    def test_mylibgo_pass_int_array(self):
+        """Test call go func"""
+        mygolib.Test4("hello", "world", [4, 2])
+
+    def test_mylibgo_return_int_array(self):
+        """Test call go func"""
+        arg = 4
+        expect = [i*2 for i in range(arg)]
+        self.assertEqual(mygolib.Test5("hello", "world", arg), expect)
+
+    def test_mylibgo_return_byte_array(self):
+        """Test call go func"""
+        abyte = b'a'[0]
+        self.assertEqual(mygolib.Test6(4, abyte), [abyte, abyte, abyte, abyte ])
+
+    # def test_mylibgo_pass_return_bools(self):
     #     """Test call go func"""
-    #     mygolib.Test4("hello", "world", [4, 2])
+    #     bools = [True, False, False, True]
+    #     self.assertEqual(mygolib.Test7(bools, bools), bools+bools)
 
-
+    def test_mylibgo_pass_return_bools(self):
+        """Test call go func"""
+        bools = [True, True, True, False, False, True]
+        self.assertEqual(mygolib.Test7(bools, bools), bools+bools)
 
 
 if __name__ == '__main__':

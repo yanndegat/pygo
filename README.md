@@ -29,8 +29,8 @@ func myGoFunc(carg *C.char) *C.char {
 	return C.CString(fmt.Sprintf("hello %s", goarg))
 }
 
-//export freeCString
-func freeCString(c *C.char) {
+//export freeMem
+func freeMem(c *C.void) {
 	C.free(unsafe.Pointer(c))
 }
 
